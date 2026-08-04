@@ -26,6 +26,10 @@ pub fn run() {
             }
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![
+            presentation::commands::add_document,
+            presentation::commands::list_documents,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
