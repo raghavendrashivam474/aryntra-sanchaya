@@ -1,4 +1,4 @@
-// domain/document.rs
+﻿// domain/document.rs
 //
 // The Document entity is the core concept of this application.
 // It represents a real-world document a user wants to manage.
@@ -81,9 +81,6 @@ pub struct Document {
 }
 
 impl Document {
-    // Creates a new Document with a generated ID and current timestamps.
-    // This is the only way to create a Document.
-    // Direct struct construction is not allowed outside this module.
     pub fn new(
         title: String,
         category: DocumentCategory,
@@ -119,14 +116,129 @@ impl Document {
 // ---------------------------------------------------------------------------
 // DocumentRepository
 // ---------------------------------------------------------------------------
-//
-// This trait defines what persistence operations are required.
-// Infrastructure provides the implementation.
-// The domain defines the contract.
 
 pub trait DocumentRepository {
     fn save(&self, document: &Document) -> Result<()>;
     fn find_by_id(&self, id: &str) -> Result<Option<Document>>;
     fn find_all(&self) -> Result<Vec<Document>>;
     fn delete(&self, id: &str) -> Result<()>;
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shared::errors::SanchayaError;
+
+    fn make_document(title: &str) -> crate::shared::errors::Result<Document> {
+        Document::new(
+            title.to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    }
+
+    #[test]
+    fn document_new_returns_ok_for_valid_title() {
+        assert!(make_document("Passport").is_ok());
+    }
+
+    #[test]
+    fn document_new_rejects_empty_title() {
+        assert!(make_document("").is_err());
+    }
+
+    #[test]
+    fn document_new_rejects_whitespace_only_title() {
+        assert!(make_document("   ").is_err());
+    }
+
+    #[test]
+    fn document_new_trims_title() {
+        let doc = make_document("  Passport  ").unwrap();
+        assert_eq!(doc.title, "Passport");
+    }
+
+    #[test]
+    fn document_new_generates_non_empty_id() {
+        let doc = make_document("Passport").unwrap();
+        assert!(!doc.id.is_empty());
+    }
+
+    #[test]
+    fn document_new_generates_unique_ids() {
+        let doc_a = make_document("Passport").unwrap();
+        let doc_b = make_document("Passport").unwrap();
+        assert_ne!(doc_a.id, doc_b.id);
+    }
+
+    #[test]
+    fn document_new_created_at_equals_updated_at() {
+        let doc = make_document("Passport").unwrap();
+        assert_eq!(doc.created_at, doc.updated_at);
+    }
+
+    #[test]
+    fn document_new_stores_description() {
+        let doc = Document::new(
+            "Passport".to_string(),
+            DocumentCategory::Identity,
+            Some("My travel passport".to_string()),
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.description, Some("My travel passport".to_string()));
+    }
+
+    #[test]
+    fn document_new_stores_none_description() {
+        let doc = make_document("Passport").unwrap();
+        assert!(doc.description.is_none());
+    }
+
+    #[test]
+    fn document_new_empty_title_returns_validation_error() {
+        let result = make_document("");
+        match result {
+            Err(SanchayaError::Validation(msg)) => {
+                assert!(msg.contains("title"));
+            }
+            _ => panic!("Expected Validation error"),
+        }
+    }
+
+    #[test]
+    fn category_as_str_and_from_str_round_trip() {
+        let categories = vec![
+            DocumentCategory::Identity,
+            DocumentCategory::Education,
+            DocumentCategory::Financial,
+            DocumentCategory::Medical,
+            DocumentCategory::Legal,
+            DocumentCategory::Employment,
+            DocumentCategory::Travel,
+            DocumentCategory::Other,
+        ];
+        for category in categories {
+            let s = category.as_str();
+            let parsed = DocumentCategory::from_str(s);
+            assert_eq!(parsed, category);
+        }
+    }
+
+    #[test]
+    fn category_from_str_unknown_returns_other() {
+        let result = DocumentCategory::from_str("something_unknown");
+        assert_eq!(result, DocumentCategory::Other);
+    }
 }
