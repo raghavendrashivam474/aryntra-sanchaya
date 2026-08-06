@@ -1,4 +1,4 @@
-# 📂 Aryntra Sanchaya
+﻿# 📂 Aryntra Sanchaya
 
 <div align="center">
 
@@ -13,6 +13,7 @@
 ![License](https://img.shields.io/badge/license-MIT-green)
 ![Platform](https://img.shields.io/badge/platform-Desktop-lightgrey)
 ![Architecture](https://img.shields.io/badge/architecture-Clean%20Architecture-success)
+![CI](https://github.com/ragha/aryntra-sanchaya/actions/workflows/ci.yml/badge.svg)
 ![Offline First](https://img.shields.io/badge/offline-first-blueviolet)
 ![Privacy](https://img.shields.io/badge/privacy-by%20design-success)
 
