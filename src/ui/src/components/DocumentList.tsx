@@ -7,8 +7,9 @@
 //   - Handle empty state
 //   - Handle loading state
 //   - Format dates for display
+//   - Surface an Edit button for each document
 //
-// This component receives data as props.
+// This component receives data and callbacks as props.
 // It does not fetch data itself.
 // App.tsx owns the data and passes it down.
 
@@ -18,6 +19,7 @@ import { CATEGORY_LABELS } from "../types/document";
 interface Props {
   documents: Document[];
   isLoading: boolean;
+  onEditDocument: (document: Document) => void;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -32,7 +34,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 function formatDate(dateString: string | null): string {
-  if (!dateString) return "—";
+  if (!dateString) return "\u2014";
   const date = new Date(dateString);
   return date.toLocaleDateString(undefined, {
     year: "numeric",
@@ -54,7 +56,7 @@ function isExpiringSoon(dateString: string | null): boolean {
   return expiry > now && expiry.getTime() - now.getTime() < ninetyDays;
 }
 
-export function DocumentList({ documents, isLoading }: Props) {
+export function DocumentList({ documents, isLoading, onEditDocument }: Props) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
@@ -86,13 +88,21 @@ export function DocumentList({ documents, isLoading }: Props) {
             <h3 className="text-sm font-semibold text-gray-900 leading-tight">
               {doc.title}
             </h3>
-            <span
-              className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${
-                CATEGORY_COLORS[doc.category] ?? CATEGORY_COLORS.other
-              }`}
-            >
-              {CATEGORY_LABELS[doc.category] ?? doc.category}
-            </span>
+            <div className="flex items-center gap-2 shrink-0">
+              <span
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                  CATEGORY_COLORS[doc.category] ?? CATEGORY_COLORS.other
+                }`}
+              >
+                {CATEGORY_LABELS[doc.category] ?? doc.category}
+              </span>
+              <button
+                onClick={() => onEditDocument(doc)}
+                className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+              >
+                Edit
+              </button>
+            </div>
           </div>
 
           {/* Issuer */}
@@ -126,8 +136,8 @@ export function DocumentList({ documents, isLoading }: Props) {
                 }`}
               >
                 {formatDate(doc.expiry_date)}
-                {isExpired(doc.expiry_date) && " — Expired"}
-                {isExpiringSoon(doc.expiry_date) && " — Expiring Soon"}
+                {isExpired(doc.expiry_date) && " \u2014 Expired"}
+                {isExpiringSoon(doc.expiry_date) && " \u2014 Expiring Soon"}
               </p>
             </div>
           </div>

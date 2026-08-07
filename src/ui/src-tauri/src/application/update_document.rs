@@ -16,7 +16,9 @@
 use chrono::DateTime;
 use serde::Deserialize;
 
-use crate::domain::document::{DocumentCategory, DocumentRepository, Document};
+use crate::domain::document::{
+    Document, DocumentCategory, DocumentRepository, UpdateDocumentFields,
+};
 use crate::shared::errors::{Result, SanchayaError};
 
 // ---------------------------------------------------------------------------
@@ -49,30 +51,35 @@ pub fn execute(
         .ok_or_else(|| SanchayaError::NotFound(input.id.clone()))?;
 
     // 2. Parse dates
-    let category = DocumentCategory::from_str(&input.category);
+    let category = input
+        .category
+        .parse::<DocumentCategory>()
+        .unwrap_or(DocumentCategory::Other);
 
-    let issue_date = input.issue_date
+    let issue_date = input
+        .issue_date
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&chrono::Utc));
 
-    let expiry_date = input.expiry_date
+    let expiry_date = input
+        .expiry_date
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&chrono::Utc));
 
     // 3. Apply update through Domain
-    document.update(
-        input.title,
+    document.update(UpdateDocumentFields {
+        title: input.title,
         category,
-        input.description,
-        input.file_path,
-        input.issuer,
+        description: input.description,
+        file_path: input.file_path,
+        issuer: input.issuer,
         issue_date,
         expiry_date,
-    )?;
+    })?;
 
     // 4. Persist
     repository.update(&document)?;
@@ -131,11 +138,7 @@ mod tests {
         }
 
         fn find_by_id(&self, id: &str) -> Result<Option<Document>> {
-            let found = self.documents
-                .borrow()
-                .iter()
-                .find(|d| d.id == id)
-                .cloned();
+            let found = self.documents.borrow().iter().find(|d| d.id == id).cloned();
             Ok(found)
         }
 
@@ -155,9 +158,7 @@ mod tests {
 
         fn update(&self, document: &Document) -> Result<()> {
             if self.fail_on_update {
-                return Err(SanchayaError::Database(
-                    rusqlite::Error::InvalidQuery,
-                ));
+                return Err(SanchayaError::Database(rusqlite::Error::InvalidQuery));
             }
             let mut docs = self.documents.borrow_mut();
             if let Some(existing) = docs.iter_mut().find(|d| d.id == document.id) {
@@ -208,9 +209,7 @@ mod tests {
         let doc = make_document("Passport");
         let repo = FakeDocumentRepository::with_document(doc.clone());
         let input = update_input_for(&doc, "Indian Passport");
-
         let result = execute(input, &repo);
-
         assert!(result.is_ok());
     }
 
@@ -220,9 +219,7 @@ mod tests {
         let id = doc.id.clone();
         let repo = FakeDocumentRepository::with_document(doc.clone());
         let input = update_input_for(&doc, "Indian Passport");
-
         execute(input, &repo).unwrap();
-
         let stored = repo.find_by_id(&id).unwrap().unwrap();
         assert_eq!(stored.title, "Indian Passport");
     }
@@ -232,9 +229,7 @@ mod tests {
         let doc = make_document("Passport");
         let repo = FakeDocumentRepository::with_document(doc.clone());
         let input = update_input_for(&doc, "Indian Passport");
-
         let result = execute(input, &repo).unwrap();
-
         assert_eq!(result.title, "Indian Passport");
     }
 
@@ -251,9 +246,7 @@ mod tests {
             issue_date: None,
             expiry_date: None,
         };
-
         let result = execute(input, &repo);
-
         assert!(result.is_err());
         match result {
             Err(SanchayaError::NotFound(_)) => {}
@@ -266,9 +259,7 @@ mod tests {
         let doc = make_document("Passport");
         let repo = FakeDocumentRepository::with_document(doc.clone());
         let input = update_input_for(&doc, "");
-
         let result = execute(input, &repo);
-
         assert!(result.is_err());
         match result {
             Err(SanchayaError::Validation(_)) => {}
@@ -282,9 +273,7 @@ mod tests {
         let repo = FakeDocumentRepository::that_fails_on_update();
         repo.documents.borrow_mut().push(doc.clone());
         let input = update_input_for(&doc, "Indian Passport");
-
         let result = execute(input, &repo);
-
         assert!(result.is_err());
     }
 }

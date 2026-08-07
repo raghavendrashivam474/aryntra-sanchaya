@@ -4,8 +4,8 @@
 // Schema creation lives here.
 // Nothing else lives here.
 
-use rusqlite::Connection;
 use crate::shared::errors::Result;
+use rusqlite::Connection;
 
 pub fn open(db_path: &str) -> Result<Connection> {
     let conn = Connection::open(db_path)?;
@@ -22,7 +22,8 @@ pub fn open(db_path: &str) -> Result<Connection> {
 }
 
 fn create_schema(conn: &Connection) -> Result<()> {
-    conn.execute_batch("
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS documents (
             id          TEXT PRIMARY KEY NOT NULL,
             title       TEXT NOT NULL,
@@ -35,7 +36,8 @@ fn create_schema(conn: &Connection) -> Result<()> {
             created_at  TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
-    ")?;
+    ",
+    )?;
 
     Ok(())
 }

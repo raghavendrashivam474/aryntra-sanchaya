@@ -61,19 +61,13 @@ mod tests {
         }
 
         fn find_by_id(&self, id: &str) -> Result<Option<Document>> {
-            let found = self.documents
-                .borrow()
-                .iter()
-                .find(|d| d.id == id)
-                .cloned();
+            let found = self.documents.borrow().iter().find(|d| d.id == id).cloned();
             Ok(found)
         }
 
         fn find_all(&self) -> Result<Vec<Document>> {
             if self.fail_on_find_all {
-                return Err(SanchayaError::Database(
-                    rusqlite::Error::InvalidQuery,
-                ));
+                return Err(SanchayaError::Database(rusqlite::Error::InvalidQuery));
             }
             Ok(self.documents.borrow().clone())
         }

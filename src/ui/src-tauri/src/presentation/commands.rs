@@ -13,9 +13,9 @@
 // Business logic does not live here.
 // SQL does not live here.
 
+use serde::Serialize;
 use tauri::AppHandle;
 use tauri::Manager;
-use serde::Serialize;
 
 use crate::application::{add_document, list_documents, update_document};
 use crate::domain::document::Document;
@@ -56,13 +56,9 @@ fn db_path(app: &AppHandle) -> String {
         .app_data_dir()
         .expect("Failed to resolve app data directory");
 
-    std::fs::create_dir_all(&data_dir)
-        .expect("Failed to create app data directory");
+    std::fs::create_dir_all(&data_dir).expect("Failed to create app data directory");
 
-    data_dir
-        .join("sanchaya.db")
-        .to_string_lossy()
-        .to_string()
+    data_dir.join("sanchaya.db").to_string_lossy().to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +74,7 @@ pub fn add_document(
     let conn = database::open(&path).map_err(CommandError::from)?;
     let repo = SqliteDocumentRepository::new(&conn);
 
-    add_document::execute(input, &repo)
-        .map_err(CommandError::from)
+    add_document::execute(input, &repo).map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -88,8 +83,7 @@ pub fn list_documents(app: AppHandle) -> CommandResult<Vec<Document>> {
     let conn = database::open(&path).map_err(CommandError::from)?;
     let repo = SqliteDocumentRepository::new(&conn);
 
-    list_documents::execute(&repo)
-        .map_err(CommandError::from)
+    list_documents::execute(&repo).map_err(CommandError::from)
 }
 
 #[tauri::command]
@@ -101,6 +95,5 @@ pub fn update_document(
     let conn = database::open(&path).map_err(CommandError::from)?;
     let repo = SqliteDocumentRepository::new(&conn);
 
-    update_document::execute(input, &repo)
-        .map_err(CommandError::from)
+    update_document::execute(input, &repo).map_err(CommandError::from)
 }

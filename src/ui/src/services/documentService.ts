@@ -7,7 +7,12 @@
 // This boundary means if Tauri changes, only this file changes.
 
 import { invoke } from "@tauri-apps/api/core";
-import type { Document, AddDocumentInput, CommandError } from "../types/document";
+import type {
+  Document,
+  AddDocumentInput,
+  UpdateDocumentInput,
+  CommandError,
+} from "../types/document";
 
 // Tauri commands return Ok(T) or Err(CommandError).
 // invoke() throws on Err, so we catch and re-throw with a clean message.
@@ -29,5 +34,17 @@ export async function listDocuments(): Promise<Document[]> {
   } catch (error) {
     const commandError = error as CommandError;
     throw new Error(commandError.message ?? "Failed to load documents");
+  }
+}
+
+export async function updateDocument(
+  input: UpdateDocumentInput
+): Promise<Document> {
+  try {
+    const document = await invoke<Document>("update_document", { input });
+    return document;
+  } catch (error) {
+    const commandError = error as CommandError;
+    throw new Error(commandError.message ?? "Failed to update document");
   }
 }

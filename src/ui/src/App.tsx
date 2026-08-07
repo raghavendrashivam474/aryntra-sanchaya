@@ -4,9 +4,10 @@
 //
 // Responsibilities:
 //   - Own the document list state
+//   - Own the editing state (which document is being edited)
 //   - Load documents on startup
 //   - Pass data down to DocumentList
-//   - Pass callbacks down to AddDocumentForm
+//   - Pass callbacks down to AddDocumentForm and EditDocumentForm
 //
 // This component coordinates. It does not render business UI directly.
 
@@ -14,12 +15,14 @@ import { useState, useEffect } from "react";
 import type { Document } from "./types/document";
 import { listDocuments } from "./services/documentService";
 import { AddDocumentForm } from "./components/AddDocumentForm";
+import { EditDocumentForm } from "./components/EditDocumentForm";
 import { DocumentList } from "./components/DocumentList";
 
 export default function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [editingDocument, setEditingDocument] = useState<Document | null>(null);
 
   useEffect(() => {
     loadDocuments();
@@ -45,6 +48,21 @@ export default function App() {
     setDocuments((prev) => [document, ...prev]);
   }
 
+  function handleEditDocument(document: Document) {
+    setEditingDocument(document);
+  }
+
+  function handleDocumentUpdated(updated: Document) {
+    setDocuments((prev) =>
+      prev.map((doc) => (doc.id === updated.id ? updated : doc))
+    );
+    setEditingDocument(null);
+  }
+
+  function handleCancelEdit() {
+    setEditingDocument(null);
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -62,8 +80,16 @@ export default function App() {
       {/* Main */}
       <main className="max-w-3xl mx-auto px-6 py-8 space-y-8">
 
-        {/* Add Document Form */}
-        <AddDocumentForm onDocumentAdded={handleDocumentAdded} />
+        {/* Edit form replaces Add form while editing */}
+        {editingDocument ? (
+          <EditDocumentForm
+            document={editingDocument}
+            onDocumentUpdated={handleDocumentUpdated}
+            onCancel={handleCancelEdit}
+          />
+        ) : (
+          <AddDocumentForm onDocumentAdded={handleDocumentAdded} />
+        )}
 
         {/* Document List */}
         <section>
@@ -84,7 +110,11 @@ export default function App() {
             </div>
           )}
 
-          <DocumentList documents={documents} isLoading={isLoading} />
+          <DocumentList
+            documents={documents}
+            isLoading={isLoading}
+            onEditDocument={handleEditDocument}
+          />
         </section>
       </main>
     </div>

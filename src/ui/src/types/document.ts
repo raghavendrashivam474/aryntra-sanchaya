@@ -61,6 +61,18 @@ export interface AddDocumentInput {
   expiry_date: string | null;
 }
 
+// Mirrors the Rust UpdateDocumentInput struct
+export interface UpdateDocumentInput {
+  id: string;
+  title: string;
+  category: string;
+  description: string | null;
+  file_path: string | null;
+  issuer: string | null;
+  issue_date: string | null;
+  expiry_date: string | null;
+}
+
 // Mirrors the Rust CommandError struct
 export interface CommandError {
   message: string;

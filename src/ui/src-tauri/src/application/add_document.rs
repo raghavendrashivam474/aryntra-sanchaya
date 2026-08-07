@@ -36,19 +36,21 @@ pub struct AddDocumentInput {
 // Use Case
 // ---------------------------------------------------------------------------
 
-pub fn execute(
-    input: AddDocumentInput,
-    repository: &dyn DocumentRepository,
-) -> Result<Document> {
-    let category = DocumentCategory::from_str(&input.category);
+pub fn execute(input: AddDocumentInput, repository: &dyn DocumentRepository) -> Result<Document> {
+    let category = input
+        .category
+        .parse::<DocumentCategory>()
+        .unwrap_or(DocumentCategory::Other);
 
-    let issue_date = input.issue_date
+    let issue_date = input
+        .issue_date
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
         .map(|d| d.with_timezone(&chrono::Utc));
 
-    let expiry_date = input.expiry_date
+    let expiry_date = input
+        .expiry_date
         .as_deref()
         .filter(|s| !s.is_empty())
         .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
@@ -112,20 +114,14 @@ mod tests {
     impl DocumentRepository for FakeDocumentRepository {
         fn save(&self, document: &Document) -> Result<()> {
             if self.fail_on_save {
-                return Err(SanchayaError::Database(
-                    rusqlite::Error::InvalidQuery,
-                ));
+                return Err(SanchayaError::Database(rusqlite::Error::InvalidQuery));
             }
             self.documents.borrow_mut().push(document.clone());
             Ok(())
         }
 
         fn find_by_id(&self, id: &str) -> Result<Option<Document>> {
-            let found = self.documents
-                .borrow()
-                .iter()
-                .find(|d| d.id == id)
-                .cloned();
+            let found = self.documents.borrow().iter().find(|d| d.id == id).cloned();
             Ok(found)
         }
 
