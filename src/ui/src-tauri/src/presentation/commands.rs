@@ -17,7 +17,7 @@ use tauri::AppHandle;
 use tauri::Manager;
 use serde::Serialize;
 
-use crate::application::{add_document, list_documents};
+use crate::application::{add_document, list_documents, update_document};
 use crate::domain::document::Document;
 use crate::infrastructure::database;
 use crate::infrastructure::document_repository::SqliteDocumentRepository;
@@ -89,5 +89,18 @@ pub fn list_documents(app: AppHandle) -> CommandResult<Vec<Document>> {
     let repo = SqliteDocumentRepository::new(&conn);
 
     list_documents::execute(&repo)
+        .map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn update_document(
+    app: AppHandle,
+    input: update_document::UpdateDocumentInput,
+) -> CommandResult<Document> {
+    let path = db_path(&app);
+    let conn = database::open(&path).map_err(CommandError::from)?;
+    let repo = SqliteDocumentRepository::new(&conn);
+
+    update_document::execute(input, &repo)
         .map_err(CommandError::from)
 }
