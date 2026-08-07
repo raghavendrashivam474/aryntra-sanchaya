@@ -4,3 +4,4 @@
 
 pub mod add_document;
 pub mod list_documents;
+pub mod update_document;
