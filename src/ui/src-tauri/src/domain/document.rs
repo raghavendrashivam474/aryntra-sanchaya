@@ -1,4 +1,4 @@
-﻿// domain/document.rs
+// domain/document.rs
 //
 // The Document entity is the core concept of this application.
 // It represents a real-world document a user wants to manage.
@@ -111,6 +111,41 @@ impl Document {
             updated_at: now,
         })
     }
+
+    /// Apply updates to editable fields.
+    ///
+    /// Rules enforced here in the Domain:
+    ///   - Title must not be empty or whitespace-only.
+    ///   - Title is trimmed.
+    ///   - id and created_at are never touched.
+    ///   - updated_at is set to the current time.
+    pub fn update(
+        &mut self,
+        title: String,
+        category: DocumentCategory,
+        description: Option<String>,
+        file_path: Option<String>,
+        issuer: Option<String>,
+        issue_date: Option<DateTime<Utc>>,
+        expiry_date: Option<DateTime<Utc>>,
+    ) -> Result<()> {
+        if title.trim().is_empty() {
+            return Err(crate::shared::errors::SanchayaError::Validation(
+                "Document title cannot be empty".to_string(),
+            ));
+        }
+
+        self.title = title.trim().to_string();
+        self.category = category;
+        self.description = description;
+        self.file_path = file_path;
+        self.issuer = issuer;
+        self.issue_date = issue_date;
+        self.expiry_date = expiry_date;
+        self.updated_at = Utc::now();
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -122,6 +157,7 @@ pub trait DocumentRepository {
     fn find_by_id(&self, id: &str) -> Result<Option<Document>>;
     fn find_all(&self) -> Result<Vec<Document>>;
     fn delete(&self, id: &str) -> Result<()>;
+    fn update(&self, document: &Document) -> Result<()>;
 }
 
 // ---------------------------------------------------------------------------
@@ -240,5 +276,180 @@ mod tests {
     fn category_from_str_unknown_returns_other() {
         let result = DocumentCategory::from_str("something_unknown");
         assert_eq!(result, DocumentCategory::Other);
+    }
+
+    // -----------------------------------------------------------------------
+    // update() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn document_update_changes_title() {
+        let mut doc = make_document("Passport").unwrap();
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.title, "Indian Passport");
+    }
+
+    #[test]
+    fn document_update_changes_category() {
+        let mut doc = make_document("Passport").unwrap();
+        doc.update(
+            "Passport".to_string(),
+            DocumentCategory::Travel,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.category, DocumentCategory::Travel);
+    }
+
+    #[test]
+    fn document_update_changes_optional_fields() {
+        let mut doc = make_document("Passport").unwrap();
+        doc.update(
+            "Passport".to_string(),
+            DocumentCategory::Identity,
+            Some("Updated description".to_string()),
+            Some("/new/path".to_string()),
+            Some("New Issuer".to_string()),
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.description, Some("Updated description".to_string()));
+        assert_eq!(doc.file_path, Some("/new/path".to_string()));
+        assert_eq!(doc.issuer, Some("New Issuer".to_string()));
+    }
+
+    #[test]
+    fn document_update_rejects_empty_title() {
+        let mut doc = make_document("Passport").unwrap();
+        let result = doc.update(
+            "".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn document_update_rejects_whitespace_only_title() {
+        let mut doc = make_document("Passport").unwrap();
+        let result = doc.update(
+            "   ".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn document_update_trims_title() {
+        let mut doc = make_document("Passport").unwrap();
+        doc.update(
+            "  Indian Passport  ".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.title, "Indian Passport");
+    }
+
+    #[test]
+    fn document_update_preserves_id() {
+        let mut doc = make_document("Passport").unwrap();
+        let original_id = doc.id.clone();
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.id, original_id);
+    }
+
+    #[test]
+    fn document_update_preserves_created_at() {
+        let mut doc = make_document("Passport").unwrap();
+        let original_created_at = doc.created_at;
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert_eq!(doc.created_at, original_created_at);
+    }
+
+    #[test]
+    fn document_update_changes_updated_at() {
+        let mut doc = make_document("Passport").unwrap();
+        let original_updated_at = doc.updated_at;
+
+        // Sleep briefly so the clock advances.
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(doc.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn document_update_empty_title_returns_validation_error() {
+        let mut doc = make_document("Passport").unwrap();
+        let result = doc.update(
+            "".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        match result {
+            Err(SanchayaError::Validation(msg)) => {
+                assert!(msg.contains("title"));
+            }
+            _ => panic!("Expected Validation error"),
+        }
     }
 }

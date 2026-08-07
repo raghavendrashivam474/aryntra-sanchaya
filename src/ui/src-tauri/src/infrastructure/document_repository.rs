@@ -1,4 +1,4 @@
-﻿// infrastructure/document_repository.rs
+// infrastructure/document_repository.rs
 //
 // Implements DocumentRepository using SQLite.
 // This is the only file allowed to speak SQL for documents.
@@ -96,6 +96,38 @@ impl<'a> DocumentRepository for SqliteDocumentRepository<'a> {
 
         Ok(())
     }
+
+    fn update(&self, document: &Document) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE documents SET
+                title = ?1,
+                category = ?2,
+                description = ?3,
+                file_path = ?4,
+                issuer = ?5,
+                issue_date = ?6,
+                expiry_date = ?7,
+                updated_at = ?8
+             WHERE id = ?9",
+            params![
+                document.title,
+                document.category.as_str(),
+                document.description,
+                document.file_path,
+                document.issuer,
+                document.issue_date.map(|d| d.to_rfc3339()),
+                document.expiry_date.map(|d| d.to_rfc3339()),
+                document.updated_at.to_rfc3339(),
+                document.id,
+            ],
+        )?;
+
+        if affected == 0 {
+            return Err(SanchayaError::NotFound(document.id.clone()));
+        }
+
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -152,9 +184,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Helper
     // -----------------------------------------------------------------------
-    //
-    // Every test gets a fresh in-memory database.
-    // No state leaks between tests.
 
     fn setup() -> Connection {
         let conn = database::open(":memory:").unwrap();
@@ -376,5 +405,152 @@ mod tests {
         let remaining = repo.find_all().unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].title, "Degree Certificate");
+    }
+
+    // -----------------------------------------------------------------------
+    // update
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn update_persists_changed_title() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let mut doc = make_document("Passport");
+        let id = doc.id.clone();
+
+        repo.save(&doc).unwrap();
+
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc).unwrap();
+
+        let found = repo.find_by_id(&id).unwrap().unwrap();
+        assert_eq!(found.title, "Indian Passport");
+    }
+
+    #[test]
+    fn update_persists_changed_category() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let mut doc = make_document("Passport");
+        let id = doc.id.clone();
+
+        repo.save(&doc).unwrap();
+
+        doc.update(
+            "Passport".to_string(),
+            DocumentCategory::Travel,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc).unwrap();
+
+        let found = repo.find_by_id(&id).unwrap().unwrap();
+        assert_eq!(found.category, DocumentCategory::Travel);
+    }
+
+    #[test]
+    fn update_preserves_id() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let mut doc = make_document("Passport");
+        let id = doc.id.clone();
+
+        repo.save(&doc).unwrap();
+
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc).unwrap();
+
+        let found = repo.find_by_id(&id).unwrap().unwrap();
+        assert_eq!(found.id, id);
+    }
+
+    #[test]
+    fn update_preserves_created_at() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let mut doc = make_document("Passport");
+        let id = doc.id.clone();
+        let original_created_at = doc.created_at;
+
+        repo.save(&doc).unwrap();
+
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc).unwrap();
+
+        let found = repo.find_by_id(&id).unwrap().unwrap();
+        assert_eq!(found.created_at, original_created_at);
+    }
+
+    #[test]
+    fn update_persists_updated_at() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let mut doc = make_document("Passport");
+        let id = doc.id.clone();
+        let original_updated_at = doc.updated_at;
+
+        repo.save(&doc).unwrap();
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        doc.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Identity,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc).unwrap();
+
+        let found = repo.find_by_id(&id).unwrap().unwrap();
+        assert!(found.updated_at > original_updated_at);
+    }
+
+    #[test]
+    fn update_returns_not_found_for_missing_document() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+        let doc = make_document("Passport");
+
+        let result = repo.update(&doc);
+
+        assert!(result.is_err());
+        match result {
+            Err(SanchayaError::NotFound(_)) => {}
+            _ => panic!("Expected NotFound error"),
+        }
+    }
+
+    #[test]
+    fn update_does_not_modify_other_documents() {
+        let conn = setup();
+        let repo = SqliteDocumentRepository::new(&conn);
+
+        let mut doc_a = make_document("Passport");
+        let doc_b = make_document("Degree Certificate");
+        let id_b = doc_b.id.clone();
+
+        repo.save(&doc_a).unwrap();
+        repo.save(&doc_b).unwrap();
+
+        doc_a.update(
+            "Indian Passport".to_string(),
+            DocumentCategory::Travel,
+            None, None, None, None, None,
+        ).unwrap();
+        repo.update(&doc_a).unwrap();
+
+        let found_b = repo.find_by_id(&id_b).unwrap().unwrap();
+        assert_eq!(found_b.title, "Degree Certificate");
+        assert_eq!(found_b.category, DocumentCategory::Identity);
     }
 }

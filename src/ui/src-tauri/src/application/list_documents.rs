@@ -1,4 +1,4 @@
-﻿// application/list_documents.rs
+// application/list_documents.rs
 //
 // Use case: Retrieve all documents from the vault.
 //
@@ -86,6 +86,16 @@ mod tests {
                 return Err(SanchayaError::NotFound(id.to_string()));
             }
             Ok(())
+        }
+
+        fn update(&self, document: &Document) -> Result<()> {
+            let mut docs = self.documents.borrow_mut();
+            if let Some(existing) = docs.iter_mut().find(|d| d.id == document.id) {
+                *existing = document.clone();
+                Ok(())
+            } else {
+                Err(SanchayaError::NotFound(document.id.clone()))
+            }
         }
     }
 

@@ -1,4 +1,4 @@
-﻿// application/add_document.rs
+// application/add_document.rs
 //
 // Use case: Add a new document to the vault.
 //
@@ -83,9 +83,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Fake repository
     // -----------------------------------------------------------------------
-    //
-    // Implements DocumentRepository using an in-memory Vec.
-    // No SQLite. No files. Tests run in isolation.
 
     struct FakeDocumentRepository {
         documents: RefCell<Vec<Document>>,
@@ -144,6 +141,16 @@ mod tests {
                 return Err(SanchayaError::NotFound(id.to_string()));
             }
             Ok(())
+        }
+
+        fn update(&self, document: &Document) -> Result<()> {
+            let mut docs = self.documents.borrow_mut();
+            if let Some(existing) = docs.iter_mut().find(|d| d.id == document.id) {
+                *existing = document.clone();
+                Ok(())
+            } else {
+                Err(SanchayaError::NotFound(document.id.clone()))
+            }
         }
     }
 
