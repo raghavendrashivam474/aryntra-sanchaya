@@ -24,6 +24,7 @@ use crate::shared::errors::Result;
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum DocumentCategory {
     Identity,
     Education,
@@ -303,6 +304,12 @@ mod tests {
     fn category_from_str_unknown_returns_other() {
         let result = "something_unknown".parse::<DocumentCategory>().unwrap();
         assert_eq!(result, DocumentCategory::Other);
+    }
+
+    #[test]
+    fn category_serializes_as_lowercase() {
+        let json = serde_json::to_string(&DocumentCategory::Identity).unwrap();
+        assert_eq!(json, "\"identity\"");
     }
 
     // -----------------------------------------------------------------------
