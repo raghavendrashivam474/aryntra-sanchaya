@@ -1,21 +1,28 @@
-﻿// App.tsx
+// App.tsx
 //
 // Application root.
 //
 // Responsibilities:
 //   - Own the document list state
 //   - Own the editing state (which document is being edited)
-//   - Own search and filter state
+//   - Own search, category, and expiry filter state
 //   - Load documents on startup
-//   - Derive filteredDocuments from search query and category selection
+//   - Derive filteredDocuments from search query, category, and expiry status
+//   - Derive expiry summary counts from the full document list
 //   - Pass filtered data down to DocumentList
 //   - Pass callbacks down to AddDocumentForm and EditDocumentForm
 //
 // This component coordinates. It does not render business UI directly.
 
 import { useState, useEffect, useMemo } from "react";
-import type { Document, DocumentCategory } from "./types/document";
-import { DOCUMENT_CATEGORIES, CATEGORY_LABELS } from "./types/document";
+import type { Document, DocumentCategory, ExpiryStatus } from "./types/document";
+import {
+  DOCUMENT_CATEGORIES,
+  CATEGORY_LABELS,
+  EXPIRY_STATUSES,
+  EXPIRY_STATUS_LABELS,
+  getExpiryStatus,
+} from "./types/document";
 import { listDocuments, deleteDocument } from "./services/documentService";
 import { AddDocumentForm } from "./components/AddDocumentForm";
 import { EditDocumentForm } from "./components/EditDocumentForm";
@@ -23,7 +30,7 @@ import { DocumentList } from "./components/DocumentList";
 
 export default function App() {
   // ---------------------------------------------------------------------------
-  // Document state — canonical collection from backend
+  // Document state
   // ---------------------------------------------------------------------------
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -32,48 +39,72 @@ export default function App() {
   const [editingDocument, setEditingDocument] = useState<Document | null>(null);
 
   // ---------------------------------------------------------------------------
-  // Search and filter state
+  // Filter state
   // ---------------------------------------------------------------------------
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] =
     useState<DocumentCategory | "all">("all");
+  const [selectedExpiryStatus, setSelectedExpiryStatus] =
+    useState<ExpiryStatus | "all">("all");
+
+  // ---------------------------------------------------------------------------
+  // Expiry summary counts
+  //
+  // Derived from the full document list, not the filtered list.
+  // Always reflects the vault as a whole regardless of active filters.
+  // ---------------------------------------------------------------------------
+  const expirySummary = useMemo(() => {
+    const now = new Date();
+    const counts = {
+      expired: 0,
+      expiring_soon: 0,
+      valid: 0,
+      no_expiry: 0,
+    };
+    for (const doc of documents) {
+      const status = getExpiryStatus(doc.expiry_date, now);
+      counts[status] += 1;
+    }
+    return counts;
+  }, [documents]);
 
   // ---------------------------------------------------------------------------
   // Derived filtered documents
   //
-  // Not stored as mutable state — computed from source documents.
-  // Recomputes whenever documents, searchQuery, or selectedCategory changes.
+  // Recomputes whenever documents, searchQuery, selectedCategory,
+  // or selectedExpiryStatus changes.
   // ---------------------------------------------------------------------------
   const filteredDocuments = useMemo(() => {
     const trimmed = searchQuery.trim().toLowerCase();
+    const now = new Date();
 
     return documents.filter((doc) => {
-      // Category filter — skip if "all"
       const categoryMatch =
         selectedCategory === "all" || doc.category === selectedCategory;
 
-      // Search filter — skip if query is empty
       const searchMatch =
         trimmed === "" ||
         doc.title.toLowerCase().includes(trimmed) ||
         (doc.issuer?.toLowerCase().includes(trimmed) ?? false) ||
         (doc.description?.toLowerCase().includes(trimmed) ?? false);
 
-      return categoryMatch && searchMatch;
+      const expiryMatch =
+        selectedExpiryStatus === "all" ||
+        getExpiryStatus(doc.expiry_date, now) === selectedExpiryStatus;
+
+      return categoryMatch && searchMatch && expiryMatch;
     });
-  }, [documents, searchQuery, selectedCategory]);
+  }, [documents, searchQuery, selectedCategory, selectedExpiryStatus]);
 
   // ---------------------------------------------------------------------------
   // Derived state flags
   // ---------------------------------------------------------------------------
-
-  // True only when the vault itself contains no documents at all.
   const vaultIsEmpty = documents.length === 0;
 
-  // True when filters are active and produced no results,
-  // but the vault is not actually empty.
   const filtersAreActive =
-    searchQuery.trim() !== "" || selectedCategory !== "all";
+    searchQuery.trim() !== "" ||
+    selectedCategory !== "all" ||
+    selectedExpiryStatus !== "all";
 
   // ---------------------------------------------------------------------------
   // Lifecycle
@@ -140,6 +171,7 @@ export default function App() {
   function handleClearFilters() {
     setSearchQuery("");
     setSelectedCategory("all");
+    setSelectedExpiryStatus("all");
   }
 
   // ---------------------------------------------------------------------------
@@ -188,7 +220,37 @@ export default function App() {
             </span>
           </div>
 
-          {/* Search and filter controls — hidden while vault is empty */}
+          {/* Expiry summary -- visible when vault has documents */}
+          {!vaultIsEmpty && !isLoading && (
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-red-700">
+                  {expirySummary.expired}
+                </p>
+                <p className="text-xs text-red-500">Expired</p>
+              </div>
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-yellow-700">
+                  {expirySummary.expiring_soon}
+                </p>
+                <p className="text-xs text-yellow-600">Expiring Soon</p>
+              </div>
+              <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-green-700">
+                  {expirySummary.valid}
+                </p>
+                <p className="text-xs text-green-600">Valid</p>
+              </div>
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-center">
+                <p className="text-lg font-semibold text-gray-600">
+                  {expirySummary.no_expiry}
+                </p>
+                <p className="text-xs text-gray-400">No Expiry</p>
+              </div>
+            </div>
+          )}
+
+          {/* Search and filter controls -- hidden while vault is empty */}
           {!vaultIsEmpty && !isLoading && (
             <div className="flex flex-col sm:flex-row gap-2 mb-4">
               {/* Search input */}
@@ -223,7 +285,25 @@ export default function App() {
                 ))}
               </select>
 
-              {/* Clear button — only visible when filters are active */}
+              {/* Expiry status selector */}
+              <select
+                value={selectedExpiryStatus}
+                onChange={(e) =>
+                  setSelectedExpiryStatus(
+                    e.target.value as ExpiryStatus | "all"
+                  )
+                }
+                className="sm:w-44 px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400"
+              >
+                <option value="all">All Statuses</option>
+                {EXPIRY_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {EXPIRY_STATUS_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+
+              {/* Clear button -- only visible when filters are active */}
               {filtersAreActive && (
                 <button
                   onClick={handleClearFilters}
