@@ -5,6 +5,7 @@
 //
 // This file contains:
 //   - DocumentCategory   (what kind of document it is)
+//   - ExpiryStatus       (expiry classification for a document)
 //   - Document           (the entity itself)
 //   - DocumentRepository (the trait that infrastructure must implement)
 //
@@ -12,7 +13,7 @@
 // No Tauri code lives here.
 // No framework code lives here.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use uuid::Uuid;
@@ -51,8 +52,6 @@ impl DocumentCategory {
     }
 }
 
-/// Implementing the standard FromStr trait satisfies clippy and makes
-/// DocumentCategory::from_str() callable via the standard interface.
 impl FromStr for DocumentCategory {
     type Err = ();
 
@@ -71,11 +70,40 @@ impl FromStr for DocumentCategory {
 }
 
 // ---------------------------------------------------------------------------
-// UpdateDocumentFields
+// ExpiryStatus
 // ---------------------------------------------------------------------------
 //
-// Groups the editable fields for a document update.
-// Avoids the clippy too-many-arguments lint on Document::update().
+// Represents the lifecycle state of a document with respect to its
+// expiry date.
+//
+// Classification rules (v0.6.0):
+//
+//   NoExpiry      - expiry_date is None
+//   Expired       - expiry_date < now
+//   ExpiringSoon  - expiry_date >= now AND expiry_date <= now + 30 days
+//   Valid         - expiry_date > now + 30 days
+//
+// The threshold of 30 days is an explicit product rule.
+// It is defined once here and must not be duplicated elsewhere in Rust.
+//
+// "now" is always passed as a parameter so that callers can inject a
+// known timestamp in tests. The domain never calls Utc::now() directly
+// for expiry classification.
+
+pub const EXPIRY_SOON_THRESHOLD_DAYS: i64 = 30;
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpiryStatus {
+    NoExpiry,
+    Expired,
+    ExpiringSoon,
+    Valid,
+}
+
+// ---------------------------------------------------------------------------
+// UpdateDocumentFields
+// ---------------------------------------------------------------------------
 
 pub struct UpdateDocumentFields {
     pub title: String,
@@ -138,12 +166,6 @@ impl Document {
     }
 
     /// Apply updates to editable fields.
-    ///
-    /// Rules enforced here in the Domain:
-    ///   - Title must not be empty or whitespace-only.
-    ///   - Title is trimmed.
-    ///   - id and created_at are never touched.
-    ///   - updated_at is set to the current time.
     pub fn update(&mut self, fields: UpdateDocumentFields) -> Result<()> {
         if fields.title.trim().is_empty() {
             return Err(crate::shared::errors::SanchayaError::Validation(
@@ -161,6 +183,31 @@ impl Document {
         self.updated_at = Utc::now();
 
         Ok(())
+    }
+
+    /// Classify this document's expiry status relative to a given instant.
+    ///
+    /// `now` is injected so tests can provide a deterministic timestamp.
+    ///
+    /// Rules:
+    ///   None                              -> NoExpiry
+    ///   expiry_date < now                 -> Expired
+    ///   now <= expiry_date <= now+30days  -> ExpiringSoon
+    ///   expiry_date > now+30days          -> Valid
+    pub fn expiry_status(&self, now: DateTime<Utc>) -> ExpiryStatus {
+        match self.expiry_date {
+            None => ExpiryStatus::NoExpiry,
+            Some(expiry) => {
+                let threshold = now + Duration::days(EXPIRY_SOON_THRESHOLD_DAYS);
+                if expiry < now {
+                    ExpiryStatus::Expired
+                } else if expiry <= threshold {
+                    ExpiryStatus::ExpiringSoon
+                } else {
+                    ExpiryStatus::Valid
+                }
+            }
+        }
     }
 }
 
@@ -184,6 +231,7 @@ pub trait DocumentRepository {
 mod tests {
     use super::*;
     use crate::shared::errors::SanchayaError;
+    use chrono::TimeZone;
 
     fn make_document(title: &str) -> crate::shared::errors::Result<Document> {
         Document::new(
@@ -197,6 +245,19 @@ mod tests {
         )
     }
 
+    fn make_document_with_expiry(expiry: Option<DateTime<Utc>>) -> Document {
+        Document::new(
+            "Test Document".to_string(),
+            DocumentCategory::Identity,
+            None,
+            None,
+            None,
+            None,
+            expiry,
+        )
+        .unwrap()
+    }
+
     fn update_fields(title: &str) -> UpdateDocumentFields {
         UpdateDocumentFields {
             title: title.to_string(),
@@ -208,6 +269,14 @@ mod tests {
             expiry_date: None,
         }
     }
+
+    /// A fixed reference "now" for all expiry tests.
+    /// 2026-01-15 00:00:00 UTC
+    fn reference_now() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 1, 15, 0, 0, 0).unwrap()
+    }
+
+    // -- Document::new tests ------------------------------------------------
 
     #[test]
     fn document_new_returns_ok_for_valid_title() {
@@ -312,9 +381,7 @@ mod tests {
         assert_eq!(json, "\"identity\"");
     }
 
-    // -----------------------------------------------------------------------
-    // update() tests
-    // -----------------------------------------------------------------------
+    // -- update() tests -----------------------------------------------------
 
     #[test]
     fn document_update_changes_title() {
@@ -409,5 +476,96 @@ mod tests {
             }
             _ => panic!("Expected Validation error"),
         }
+    }
+
+    // -- ExpiryStatus tests (v0.6.0) ---------------------------------------
+
+    #[test]
+    fn expiry_status_no_expiry_when_expiry_date_is_none() {
+        let doc = make_document_with_expiry(None);
+        assert_eq!(doc.expiry_status(reference_now()), ExpiryStatus::NoExpiry);
+    }
+
+    #[test]
+    fn expiry_status_expired_when_one_second_before_now() {
+        let expiry = Utc.with_ymd_and_hms(2026, 1, 14, 23, 59, 59).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(doc.expiry_status(reference_now()), ExpiryStatus::Expired);
+    }
+
+    #[test]
+    fn expiry_status_expired_when_well_in_past() {
+        let expiry = Utc.with_ymd_and_hms(2025, 1, 1, 0, 0, 0).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(doc.expiry_status(reference_now()), ExpiryStatus::Expired);
+    }
+
+    #[test]
+    fn expiry_status_expiring_soon_when_exactly_now() {
+        let expiry = reference_now();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(
+            doc.expiry_status(reference_now()),
+            ExpiryStatus::ExpiringSoon
+        );
+    }
+
+    #[test]
+    fn expiry_status_expiring_soon_when_one_day_from_now() {
+        let expiry = Utc.with_ymd_and_hms(2026, 1, 16, 0, 0, 0).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(
+            doc.expiry_status(reference_now()),
+            ExpiryStatus::ExpiringSoon
+        );
+    }
+
+    #[test]
+    fn expiry_status_expiring_soon_when_exactly_30_days_from_now() {
+        let expiry = Utc.with_ymd_and_hms(2026, 2, 14, 0, 0, 0).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(
+            doc.expiry_status(reference_now()),
+            ExpiryStatus::ExpiringSoon
+        );
+    }
+
+    #[test]
+    fn expiry_status_valid_when_31_days_from_now() {
+        let expiry = Utc.with_ymd_and_hms(2026, 2, 15, 0, 0, 0).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(doc.expiry_status(reference_now()), ExpiryStatus::Valid);
+    }
+
+    #[test]
+    fn expiry_status_valid_when_well_in_future() {
+        let expiry = Utc.with_ymd_and_hms(2030, 1, 1, 0, 0, 0).unwrap();
+        let doc = make_document_with_expiry(Some(expiry));
+        assert_eq!(doc.expiry_status(reference_now()), ExpiryStatus::Valid);
+    }
+
+    #[test]
+    fn expiry_status_threshold_is_30_days() {
+        assert_eq!(EXPIRY_SOON_THRESHOLD_DAYS, 30);
+    }
+
+    #[test]
+    fn expiry_status_serializes_correctly() {
+        assert_eq!(
+            serde_json::to_string(&ExpiryStatus::NoExpiry).unwrap(),
+            "\"no_expiry\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ExpiryStatus::Expired).unwrap(),
+            "\"expired\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ExpiryStatus::ExpiringSoon).unwrap(),
+            "\"expiring_soon\""
+        );
+        assert_eq!(
+            serde_json::to_string(&ExpiryStatus::Valid).unwrap(),
+            "\"valid\""
+        );
     }
 }
