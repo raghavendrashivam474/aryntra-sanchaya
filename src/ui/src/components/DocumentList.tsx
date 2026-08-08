@@ -7,12 +7,14 @@
 //   - Handle empty state
 //   - Handle loading state
 //   - Format dates for display
-//   - Surface an Edit button for each document
+//   - Surface Edit and Delete actions for each document
+//   - Show inline confirmation before destructive deletion
 //
 // This component receives data and callbacks as props.
 // It does not fetch data itself.
 // App.tsx owns the data and passes it down.
 
+import { useState } from "react";
 import type { Document } from "../types/document";
 import { CATEGORY_LABELS } from "../types/document";
 
@@ -20,6 +22,7 @@ interface Props {
   documents: Document[];
   isLoading: boolean;
   onEditDocument: (document: Document) => void;
+  onDeleteDocument: (id: string) => void;
 }
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -56,7 +59,31 @@ function isExpiringSoon(dateString: string | null): boolean {
   return expiry > now && expiry.getTime() - now.getTime() < ninetyDays;
 }
 
-export function DocumentList({ documents, isLoading, onEditDocument }: Props) {
+export function DocumentList({
+  documents,
+  isLoading,
+  onEditDocument,
+  onDeleteDocument,
+}: Props) {
+  // Track which document is awaiting delete confirmation.
+  // null means no confirmation is active.
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
+    null
+  );
+
+  function handleDeleteClick(id: string) {
+    setConfirmingDeleteId(id);
+  }
+
+  function handleCancelDelete() {
+    setConfirmingDeleteId(null);
+  }
+
+  function handleConfirmDelete(id: string) {
+    setConfirmingDeleteId(null);
+    onDeleteDocument(id);
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
@@ -102,8 +129,37 @@ export function DocumentList({ documents, isLoading, onEditDocument }: Props) {
               >
                 Edit
               </button>
+              <button
+                onClick={() => handleDeleteClick(doc.id)}
+                className="text-xs text-red-500 hover:text-red-700 font-medium"
+              >
+                Delete
+              </button>
             </div>
           </div>
+
+          {/* Inline delete confirmation */}
+          {confirmingDeleteId === doc.id && (
+            <div className="bg-red-50 border border-red-200 rounded p-3 space-y-2">
+              <p className="text-xs text-red-700 font-medium">
+                Delete &ldquo;{doc.title}&rdquo;? This cannot be undone.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleCancelDelete}
+                  className="text-xs px-3 py-1 rounded border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 font-medium"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleConfirmDelete(doc.id)}
+                  className="text-xs px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700 font-medium"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Issuer */}
           {doc.issuer && (

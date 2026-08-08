@@ -13,7 +13,7 @@
 
 import { useState, useEffect } from "react";
 import type { Document } from "./types/document";
-import { listDocuments } from "./services/documentService";
+import { listDocuments, deleteDocument } from "./services/documentService";
 import { AddDocumentForm } from "./components/AddDocumentForm";
 import { EditDocumentForm } from "./components/EditDocumentForm";
 import { DocumentList } from "./components/DocumentList";
@@ -22,6 +22,7 @@ export default function App() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editingDocument, setEditingDocument] = useState<Document | null>(null);
 
   useEffect(() => {
@@ -49,6 +50,7 @@ export default function App() {
   }
 
   function handleEditDocument(document: Document) {
+    setDeleteError(null);
     setEditingDocument(document);
   }
 
@@ -61,6 +63,21 @@ export default function App() {
 
   function handleCancelEdit() {
     setEditingDocument(null);
+  }
+
+  async function handleDeleteDocument(id: string) {
+    setDeleteError(null);
+
+    try {
+      await deleteDocument(id);
+      // Backend confirmed deletion. Now remove from local state.
+      setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+    } catch (err) {
+      // Deletion failed. Document remains in state. Surface the error.
+      setDeleteError(
+        err instanceof Error ? err.message : "Failed to delete document."
+      );
+    }
   }
 
   return (
@@ -110,10 +127,18 @@ export default function App() {
             </div>
           )}
 
+          {/* Delete error */}
+          {deleteError && (
+            <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded px-4 py-3 mb-4">
+              {deleteError}
+            </div>
+          )}
+
           <DocumentList
             documents={documents}
             isLoading={isLoading}
             onEditDocument={handleEditDocument}
+            onDeleteDocument={handleDeleteDocument}
           />
         </section>
       </main>
