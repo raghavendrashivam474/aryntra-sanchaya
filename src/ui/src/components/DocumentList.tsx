@@ -1,11 +1,12 @@
-// components/DocumentList.tsx
+﻿// components/DocumentList.tsx
 //
-// Displays all documents stored in the vault.
+// Displays documents stored in the vault.
 //
 // Responsibilities:
 //   - Render a list of documents
-//   - Handle empty state
 //   - Handle loading state
+//   - Handle vault-empty state (no documents exist at all)
+//   - Handle no-results state (filters produced no matches)
 //   - Format dates for display
 //   - Surface Edit and Delete actions for each document
 //   - Show inline confirmation before destructive deletion
@@ -13,6 +14,11 @@
 // This component receives data and callbacks as props.
 // It does not fetch data itself.
 // App.tsx owns the data and passes it down.
+//
+// Two distinct empty states:
+//   vaultIsEmpty      — the vault contains no documents
+//   filtersAreActive  — documents exist but the current search/filter
+//                       produced no matches
 
 import { useState } from "react";
 import type { Document } from "../types/document";
@@ -21,6 +27,8 @@ import { CATEGORY_LABELS } from "../types/document";
 interface Props {
   documents: Document[];
   isLoading: boolean;
+  vaultIsEmpty: boolean;
+  filtersAreActive: boolean;
   onEditDocument: (document: Document) => void;
   onDeleteDocument: (id: string) => void;
 }
@@ -62,6 +70,8 @@ function isExpiringSoon(dateString: string | null): boolean {
 export function DocumentList({
   documents,
   isLoading,
+  vaultIsEmpty,
+  filtersAreActive,
   onEditDocument,
   onDeleteDocument,
 }: Props) {
@@ -84,6 +94,7 @@ export function DocumentList({
     onDeleteDocument(id);
   }
 
+  // Loading state
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-gray-400 text-sm">
@@ -92,12 +103,25 @@ export function DocumentList({
     );
   }
 
-  if (documents.length === 0) {
+  // Vault genuinely contains no documents
+  if (vaultIsEmpty) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
         <p className="text-gray-500 text-sm">No documents yet.</p>
         <p className="text-gray-400 text-xs">
           Add your first document using the form above.
+        </p>
+      </div>
+    );
+  }
+
+  // Filters are active but no documents matched
+  if (filtersAreActive && documents.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
+        <p className="text-gray-500 text-sm">No matching documents.</p>
+        <p className="text-gray-400 text-xs">
+          Try a different search or filter.
         </p>
       </div>
     );
