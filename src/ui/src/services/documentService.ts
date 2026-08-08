@@ -48,3 +48,12 @@ export async function updateDocument(
     throw new Error(commandError.message ?? "Failed to update document");
   }
 }
+
+export async function deleteDocument(id: string): Promise<void> {
+  try {
+    await invoke<void>("delete_document", { id });
+  } catch (error) {
+    const commandError = error as CommandError;
+    throw new Error(commandError.message ?? "Failed to delete document");
+  }
+}
