@@ -17,7 +17,7 @@ use serde::Serialize;
 use tauri::AppHandle;
 use tauri::Manager;
 
-use crate::application::{add_document, list_documents, update_document};
+use crate::application::{add_document, delete_document, list_documents, update_document};
 use crate::domain::document::Document;
 use crate::infrastructure::database;
 use crate::infrastructure::document_repository::SqliteDocumentRepository;
@@ -96,4 +96,13 @@ pub fn update_document(
     let repo = SqliteDocumentRepository::new(&conn);
 
     update_document::execute(input, &repo).map_err(CommandError::from)
+}
+
+#[tauri::command]
+pub fn delete_document(app: AppHandle, id: String) -> CommandResult<()> {
+    let path = db_path(&app);
+    let conn = database::open(&path).map_err(CommandError::from)?;
+    let repo = SqliteDocumentRepository::new(&conn);
+
+    delete_document::execute(&id, &repo).map_err(CommandError::from)
 }

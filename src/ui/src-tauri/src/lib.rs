@@ -30,6 +30,7 @@ pub fn run() {
             presentation::commands::add_document,
             presentation::commands::list_documents,
             presentation::commands::update_document,
+            presentation::commands::delete_document,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
