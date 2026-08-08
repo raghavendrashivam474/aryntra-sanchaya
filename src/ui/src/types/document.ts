@@ -77,3 +77,103 @@ export interface UpdateDocumentInput {
 export interface CommandError {
   message: string;
 }
+
+// ---------------------------------------------------------------------------
+// ExpiryStatus
+// ---------------------------------------------------------------------------
+//
+// Mirrors the Rust ExpiryStatus enum.
+//
+// Classification rules (v0.6.0):
+//
+//   no_expiry     - expiry_date is null
+//   expired       - expiry_date < now
+//   expiring_soon - expiry_date >= now AND expiry_date <= now + 30 days
+//   valid         - expiry_date > now + 30 days
+//
+// The 30-day threshold is the single source of truth for the frontend.
+// No other file should redefine this number.
+
+export type ExpiryStatus =
+  | "no_expiry"
+  | "expired"
+  | "expiring_soon"
+  | "valid";
+
+export const EXPIRY_SOON_THRESHOLD_DAYS = 30;
+
+export const EXPIRY_STATUS_LABELS: Record<ExpiryStatus, string> = {
+  no_expiry: "No Expiry",
+  expired: "Expired",
+  expiring_soon: "Expiring Soon",
+  valid: "Valid",
+};
+
+// All statuses in display order for the filter control.
+export const EXPIRY_STATUSES: ExpiryStatus[] = [
+  "expired",
+  "expiring_soon",
+  "valid",
+  "no_expiry",
+];
+
+// ---------------------------------------------------------------------------
+// getExpiryStatus
+// ---------------------------------------------------------------------------
+//
+// Pure function. No side effects. Mirrors Document::expiry_status() in Rust.
+//
+// `now` is a parameter so callers control the reference time.
+// Production callers pass `new Date()`.
+// Tests can pass a fixed date.
+
+export function getExpiryStatus(
+  expiryDate: string | null,
+  now: Date
+): ExpiryStatus {
+  if (!expiryDate) return "no_expiry";
+
+  const expiry = new Date(expiryDate);
+  const threshold = new Date(now);
+  threshold.setDate(threshold.getDate() + EXPIRY_SOON_THRESHOLD_DAYS);
+
+  if (expiry < now) return "expired";
+  if (expiry <= threshold) return "expiring_soon";
+  return "valid";
+}
+
+// ---------------------------------------------------------------------------
+// getDaysUntilExpiry
+// ---------------------------------------------------------------------------
+//
+// Returns the number of whole days between now and the expiry date.
+// Negative means already expired.
+// Returns null if expiry_date is null.
+
+export function getDaysUntilExpiry(
+  expiryDate: string | null,
+  now: Date
+): number | null {
+  if (!expiryDate) return null;
+
+  const expiry = new Date(expiryDate);
+  const diffMs = expiry.getTime() - now.getTime();
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
+
+// ---------------------------------------------------------------------------
+// formatExpiryDate
+// ---------------------------------------------------------------------------
+//
+// Returns a human-readable date string such as "12 Sep 2026".
+// Returns an em dash for null dates.
+
+export function formatExpiryDate(dateString: string | null): string {
+  if (!dateString) return "\u2014";
+  const date = new Date(dateString);
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
