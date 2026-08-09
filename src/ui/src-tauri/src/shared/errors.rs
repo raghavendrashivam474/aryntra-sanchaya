@@ -18,6 +18,15 @@ pub enum SanchayaError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Unsupported file type: {0}")]
+    UnsupportedFileType(String),
+
+    #[error("Attachment error: {0}")]
+    Attachment(String),
+
+    #[error("Storage error: {0}")]
+    Storage(String),
 }
 
 // Every use case and command returns this Result type.

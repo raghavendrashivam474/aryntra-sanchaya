@@ -2,26 +2,26 @@
 //
 // Displays documents stored in the vault.
 //
-// Responsibilities:
-//   - Render a list of documents
-//   - Handle loading state
-//   - Handle vault-empty state (no documents exist at all)
-//   - Handle no-results state (filters produced no matches)
-//   - Display expiry status badge and human-readable relative time
-//   - Surface Edit and Delete actions for each document
-//   - Show inline confirmation before destructive deletion
-//
-// Expiry classification uses getExpiryStatus() and getDaysUntilExpiry()
-// from types/document.ts. The 30-day threshold lives there, not here.
+// v0.7.0: Added attachment display and management.
 
-import { useState } from "react";
-import type { Document, ExpiryStatus } from "../types/document";
+import { useState, useEffect, useCallback } from "react";
+import type { Document, ExpiryStatus, Attachment } from "../types/document";
 import {
   CATEGORY_LABELS,
   getExpiryStatus,
   getDaysUntilExpiry,
   formatExpiryDate,
+  attachmentTypeLabel,
+  formatFileSize,
+  SUPPORTED_EXTENSIONS,
 } from "../types/document";
+import {
+  attachDocumentFile,
+  getDocumentAttachment,
+  removeDocumentAttachment,
+  openDocumentAttachment,
+} from "../services/documentService";
+import { open } from "@tauri-apps/plugin-dialog";
 
 interface Props {
   documents: Document[];
@@ -79,6 +79,108 @@ export function DocumentList({
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(
     null
   );
+  const [attachments, setAttachments] = useState<
+    Record<string, Attachment | null>
+  >({});
+  const [attachmentLoading, setAttachmentLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [attachmentError, setAttachmentError] = useState<
+    Record<string, string | null>
+  >({});
+
+  // Load attachments for all visible documents
+  const loadAttachments = useCallback(async () => {
+    for (const doc of documents) {
+      if (attachments[doc.id] !== undefined) continue;
+      try {
+        const att = await getDocumentAttachment(doc.id);
+        setAttachments((prev) => ({ ...prev, [doc.id]: att }));
+      } catch {
+        // Silently skip - attachment will show as none
+        setAttachments((prev) => ({ ...prev, [doc.id]: null }));
+      }
+    }
+  }, [documents]);
+
+  useEffect(() => {
+    loadAttachments();
+  }, [loadAttachments]);
+
+  // -----------------------------------------------------------------------
+  // Attachment handlers
+  // -----------------------------------------------------------------------
+
+  async function handleAttach(docId: string) {
+    setAttachmentError((prev) => ({ ...prev, [docId]: null }));
+    setAttachmentLoading((prev) => ({ ...prev, [docId]: true }));
+
+    try {
+      const selected = await open({
+        multiple: false,
+        filters: [
+          {
+            name: "Documents & Images",
+            extensions: SUPPORTED_EXTENSIONS,
+          },
+        ],
+      });
+
+      if (!selected) {
+        setAttachmentLoading((prev) => ({ ...prev, [docId]: false }));
+        return;
+      }
+
+      const filePath = selected;
+      const parts = filePath.replace(/\\/g, "/").split("/");
+      const filename = parts[parts.length - 1] || "file";
+
+      const att = await attachDocumentFile(docId, filePath, filename);
+      setAttachments((prev) => ({ ...prev, [docId]: att }));
+    } catch (err) {
+      setAttachmentError((prev) => ({
+        ...prev,
+        [docId]:
+          err instanceof Error ? err.message : "Failed to attach file",
+      }));
+    } finally {
+      setAttachmentLoading((prev) => ({ ...prev, [docId]: false }));
+    }
+  }
+
+  async function handleOpen(docId: string) {
+    try {
+      await openDocumentAttachment(docId);
+    } catch (err) {
+      setAttachmentError((prev) => ({
+        ...prev,
+        [docId]:
+          err instanceof Error ? err.message : "Failed to open file",
+      }));
+    }
+  }
+
+  async function handleRemoveAttachment(docId: string) {
+    setAttachmentError((prev) => ({ ...prev, [docId]: null }));
+    setAttachmentLoading((prev) => ({ ...prev, [docId]: true }));
+
+    try {
+      await removeDocumentAttachment(docId);
+      setAttachments((prev) => ({ ...prev, [docId]: null }));
+    } catch (err) {
+      setAttachmentError((prev) => ({
+        ...prev,
+        [docId]:
+          err instanceof Error ? err.message : "Failed to remove attachment",
+      }));
+    } finally {
+      setAttachmentLoading((prev) => ({ ...prev, [docId]: false }));
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Delete handlers
+  // -----------------------------------------------------------------------
 
   function handleDeleteClick(id: string) {
     setConfirmingDeleteId(id);
@@ -91,7 +193,17 @@ export function DocumentList({
   function handleConfirmDelete(id: string) {
     setConfirmingDeleteId(null);
     onDeleteDocument(id);
+    // Clean up local attachment state
+    setAttachments((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
   }
+
+  // -----------------------------------------------------------------------
+  // Empty states
+  // -----------------------------------------------------------------------
 
   if (isLoading) {
     return (
@@ -123,6 +235,10 @@ export function DocumentList({
     );
   }
 
+  // -----------------------------------------------------------------------
+  // Document cards
+  // -----------------------------------------------------------------------
+
   return (
     <div className="space-y-3">
       {documents.map((doc) => {
@@ -130,6 +246,9 @@ export function DocumentList({
         const status = getExpiryStatus(doc.expiry_date, now);
         const days = getDaysUntilExpiry(doc.expiry_date, now);
         const relative = formatRelativeDays(days);
+        const att = attachments[doc.id] ?? null;
+        const isAttLoading = attachmentLoading[doc.id] ?? false;
+        const attError = attachmentError[doc.id] ?? null;
 
         return (
           <div
@@ -199,23 +318,80 @@ export function DocumentList({
 
             {/* Expiry row */}
             <div className="flex items-center gap-3 pt-1">
-              {/* Expiry date */}
               <div>
                 <p className="text-xs text-gray-400">Expires</p>
                 <p className="text-xs text-gray-700">
-                  {doc.expiry_date ? formatExpiryDate(doc.expiry_date) : "\u2014"}
+                  {doc.expiry_date
+                    ? formatExpiryDate(doc.expiry_date)
+                    : "\u2014"}
                 </p>
               </div>
-
-              {/* Expiry status badge */}
               <span
-                className={`text-xs font-medium px-2 py-0.5 rounded border ${
-                  EXPIRY_BADGE_COLORS[status]
-                }`}
+                className={`text-xs font-medium px-2 py-0.5 rounded border ${EXPIRY_BADGE_COLORS[status]}`}
               >
                 {EXPIRY_BADGE_LABELS[status]}
-                {relative && status !== "no_expiry" && ` \u2014 ${relative}`}
+                {relative &&
+                  status !== "no_expiry" &&
+                  ` \u2014 ${relative}`}
               </span>
+            </div>
+
+            {/* Attachment section */}
+            <div className="border-t border-gray-100 pt-2 mt-2">
+              {attError && (
+                <p className="text-xs text-red-600 mb-1">{attError}</p>
+              )}
+
+              {att ? (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-sm">
+                      {att.mime_type.startsWith("image/")
+                        ? "\uD83D\uDDBC"
+                        : "\uD83D\uDCCE"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-gray-800 truncate">
+                        {att.original_filename}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {attachmentTypeLabel(att.mime_type)} &middot;{" "}
+                        {formatFileSize(att.size_bytes)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleOpen(doc.id)}
+                      className="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1"
+                    >
+                      Open
+                    </button>
+                    <button
+                      onClick={() => handleAttach(doc.id)}
+                      disabled={isAttLoading}
+                      className="text-xs text-gray-500 hover:text-gray-700 font-medium px-2 py-1 disabled:opacity-50"
+                    >
+                      Replace
+                    </button>
+                    <button
+                      onClick={() => handleRemoveAttachment(doc.id)}
+                      disabled={isAttLoading}
+                      className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 disabled:opacity-50"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => handleAttach(doc.id)}
+                  disabled={isAttLoading}
+                  className="text-xs text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50"
+                >
+                  {isAttLoading ? "Attaching..." : "+ Attach File"}
+                </button>
+              )}
             </div>
           </div>
         );

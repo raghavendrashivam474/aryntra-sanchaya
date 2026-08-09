@@ -14,6 +14,7 @@ pub fn open(db_path: &str) -> Result<Connection> {
     conn.execute_batch("PRAGMA journal_mode=WAL;")?;
 
     // Enable foreign key enforcement.
+    // Required for ON DELETE CASCADE on the attachments table.
     conn.execute_batch("PRAGMA foreign_keys=ON;")?;
 
     create_schema(&conn)?;
@@ -36,7 +37,19 @@ fn create_schema(conn: &Connection) -> Result<()> {
             created_at  TEXT NOT NULL,
             updated_at  TEXT NOT NULL
         );
-    ",
+
+        CREATE TABLE IF NOT EXISTS attachments (
+            id                TEXT PRIMARY KEY NOT NULL,
+            document_id       TEXT NOT NULL
+                                  REFERENCES documents(id)
+                                  ON DELETE CASCADE,
+            original_filename TEXT NOT NULL,
+            mime_type         TEXT NOT NULL,
+            size_bytes        INTEGER NOT NULL,
+            stored_filename   TEXT NOT NULL,
+            created_at        TEXT NOT NULL
+        );
+        ",
     )?;
 
     Ok(())
